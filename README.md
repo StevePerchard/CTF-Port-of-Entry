@@ -46,15 +46,21 @@ The overall campaign demonstrates a sophisticated, multi-stage intrusion involvi
 - Conduct threat hunting for additional indicators (e.g., certutil/cURL abuse, Discord webhook exfiltration, C2 beaconing to 78.141.196.6).
 - Perform a full credential and access review; reduce unnecessary privileged account usage.
 ---
+## KQL CTF Scripts: Flags 1-20
 
-# Azuki CTF Incident Timeline - Phase 1: Initial Compromise
+### [Threat Hunt KQL's](https://github.com/StevePerchard/CTF-Port-of-Entry/blob/main/THreat%20Hunt%20KQLs.md)
+---
+### Azuki CTF Incident Timeline - Phase 1: Initial Compromise
 
 **Date:** 19 November 2025  
 **Host:** `azuki-sl` (workstation)  
 **Compromised Account:** `kenji.sato`  
 **Attacker Origin:** External IP `88.97.178.12`
 
+
 This phase represents the initial foothold and workstation compromise, leading to credential theft and lateral movement.
+---
+
 
 ## Chronological Attacker Actions
 
