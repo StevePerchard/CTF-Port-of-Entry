@@ -45,3 +45,99 @@ The overall campaign demonstrates a sophisticated, multi-stage intrusion involvi
 - Implement stricter PowerShell logging, script block logging, and AMSI enforcement.
 - Conduct threat hunting for additional indicators (e.g., certutil/cURL abuse, Discord webhook exfiltration, C2 beaconing to 78.141.196.6).
 - Perform a full credential and access review; reduce unnecessary privileged account usage.
+---
+
+# Azuki CTF Incident Timeline - Phase 1: Initial Compromise
+
+**Date:** 19 November 2025  
+**Host:** `azuki-sl` (workstation)  
+**Compromised Account:** `kenji.sato`  
+**Attacker Origin:** External IP `88.97.178.12`
+
+This phase represents the initial foothold and workstation compromise, leading to credential theft and lateral movement.
+
+## Chronological Attacker Actions
+
+- **~18:36:18 – 18:36:21**  
+  Successful interactive logons from external IP **88.97.178.12** (attacker's origin).
+
+- **~18:36:50**  
+  PowerShell creates temporary test scripts (`__PSScriptPolicyTest_*.ps1`) – testing execution policy bypass.
+
+- **~18:37:26**  
+  PowerShell connects outbound to C2 **78.141.196.6:8080**.
+
+- **~18:37:40 – 18:37:41**  
+  PowerShell (hidden window, bypass policy) downloads malicious **wupdate.ps1** from C2 to Temp and executes it.
+
+- **~18:46:27**  
+  Additional download of **wupdate.bat** from C2.
+
+- **~18:49:27 – 18:49:29**  
+  Defender exclusions added for `.exe`, `.ps1`, `.bat`, and Temp folder (antivirus disabled).
+
+- **~18:49:47**  
+  Repeat download of **wupdate.ps1**.
+
+- **~19:03:17**  
+  Main malicious script **wupdate.ps1** executes.
+
+- **~19:03:32 – 19:03:38**  
+  Reconnaissance commands:  
+  - `whoami.exe`  
+  - `hostname`  
+  - `systeminfo.exe`
+
+- **~19:06:58**  
+  `certutil.exe` downloads malicious **svchost.exe** to `C:\ProgramData\WindowsCache\`.
+
+- **~19:07:21**  
+  `certutil.exe` downloads **mm.exe** (Mimikatz, disguised as AdobeGC.exe).
+
+- **~19:07:46**  
+  Creates scheduled task **"Windows Update Check"** → runs `svchost.exe` daily as SYSTEM (persistence).
+
+- **~19:08:26**  
+  Executes Mimikatz: `privilege::debug sekurlsa::logonpasswords exit` (credential dumping).
+
+- **~19:08:58**  
+  Creates **export-data.zip** (contains dumped credentials and collected data).
+
+- **~19:09:21**  
+  Exfiltrates **export-data.zip** via `curl` to a Discord webhook.
+
+- **~19:09:48 – 19:09:53**  
+  Creates backdoor account:  
+  - `net user support [password] /add`  
+  - `net localgroup Administrators support /add`
+
+- **~19:10:37**  
+  Stores credentials for **fileadmin** on **10.1.0.188** using `cmdkey.exe`.
+
+- **~19:10:41**  
+  Initiates RDP to **10.1.0.188** (`mstsc.exe /v:10.1.0.188`) → lateral movement to file server.
+
+- **~19:11:39 – 19:11:46**  
+  Clears event logs:  
+  - `wevtutil cl Security`  
+  - `wevtutil cl System`  
+  - `wevtutil cl Application`
+
+## Key Indicators of Compromise (Phase 1)
+
+- **External IPs**:  
+  - `88.97.178.12` (initial access)  
+  - `78.141.196.6` (C2 server)
+
+- **Malicious Files**:  
+  - `wupdate.ps1`, `wupdate.bat` (in Temp)  
+  - `svchost.exe`, `mm.exe` (in `C:\ProgramData\WindowsCache\`)  
+  - `export-data.zip`
+
+- **Persistence**:  
+  - Scheduled task: "Windows Update Check"
+
+- **Exfiltration**:  
+  - Discord webhook
+
+This phase ends with successful lateral movement to the file server (`azuki-fileserver01` at 10.1.0.188).
