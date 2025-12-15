@@ -141,3 +141,26 @@ This phase represents the initial foothold and workstation compromise, leading t
   - Discord webhook
 
 This phase ends with successful lateral movement to the file server (`azuki-fileserver01` at 10.1.0.188).
+
+# Azuki CTF Incident - Phase 1: MITRE ATT&CK TTPs
+
+**Date:** 19 November 2025  
+**Host:** `azuki-sl` (workstation)  
+**Compromised Account:** `kenji.sato`
+
+| Technique ID       | Technique Name                              | Evidence |
+|--------------------|---------------------------------------------|----------|
+| T1078             | Valid Accounts                              | Interactive logon as kenji.sato from external IP 88.97.178.12 |
+| T1059.001         | Command and Scripting Interpreter: PowerShell | Extensive PowerShell abuse: hidden execution, bypass policy, downloads via Invoke-WebRequest |
+| T1562.001         | Impair Defenses: Disable or Modify Tools    | Added Windows Defender exclusions for .exe, .ps1, .bat, and Temp folder |
+| T1105             | Ingress Tool Transfer                       | Multiple downloads from 78.141.196.6:8080 (wupdate.ps1, wupdate.bat, svchost.exe, mm.exe) using PowerShell and certutil |
+| T1057             | Process Discovery (inferred) / T1082 System Information Discovery | Execution of systeminfo.exe |
+| T1003.001         | OS Credential Dumping: LSASS Memory         | Mimikatz (mm.exe) executed with `sekurlsa::logonpasswords` |
+| T1547.003         | Boot or Logon Autostart Execution: Scheduled Task | Created scheduled task "Windows Update Check" to run svchost.exe as SYSTEM |
+| T1567.002         | Exfiltration Over Web Service               | curl exfiltration of export-data.zip to Discord webhook |
+| T1070.004         | Indicator Removal: Clear Windows Event Logs  | `wevtutil cl Security/System/Application` |
+| T1098             | Account Manipulation                        | Created local admin account "support" and added to Administrators group |
+| T1021.001         | Remote Services: Remote Desktop Protocol    | Stored fileadmin credentials with cmdkey and initiated RDP to 10.1.0.188 |
+| T1071.001         | Application Layer Protocol: Web Protocols   | Outbound connections to C2 (78.141.196.6:8080) and exfiltration to Discord |
+
+This phase demonstrates a classic post-exploitation chain: initial access via valid account → defense evasion → payload delivery → credential theft → persistence → exfiltration → anti-forensics → lateral movement preparation.
