@@ -1,177 +1,40 @@
-```DeviceProcessEvents  
-| where DeviceName == "azuki-sl"  
-| where Timestamp between (datetime(2025-11-19) ..datetime(2025-11-20))
-```
-```DeviceLogonEvents // Find Attackers IP Address Flag 1
-| where DeviceName == "azuki-sl"  
-| where Timestamp between (datetime(2025-11-19) ..datetime(2025-11-20))
-| where ActionType == "LogonSuccess"
-| project Timestamp, ActionType, RemoteIP, RemotePort
-| sort by Timestamp desc 
-```
-```DeviceLogonEvents // Find Compromised Accout Name Flag 2
-| where DeviceName == "azuki-sl"  
-| where Timestamp between (datetime(2025-11-19) ..datetime(2025-11-20))
-| where ActionType == "LogonSuccess"
-| where RemoteIP == "88.97.178.12"
-| project Timestamp, ActionType, RemoteIP, RemotePort
-| sort by Timestamp desc 
-// Flag 2 Answer kenji.sato
-```
-```DeviceProcessEvents  // Find Network Enumeration Flag 3
-| where DeviceName == "azuki-sl"  
-| where Timestamp between (datetime(2025-11-19) ..datetime(2025-11-20))
-| project Timestamp, FolderPath, ProcessCommandLine
-// Flag 3 Answer "ARP.EXE" -a
-```
-//DeviceFileEvents // Find Staging Area Flag 4
-DeviceProcessEvents
-| where DeviceName == "azuki-sl"  
-| where Timestamp >= datetime(2025-11-19 18:36:00) 
-and Timestamp < datetime(2025-11-20 00:00:00)
-| project Timestamp,ActionType, FileName, FolderPath, InitiatingProcessCommandLine
-// Flag 4 Answer C:\ProgramData\WindowsCache
+# Executive Summary
 
-// Detect File Extension Exclusions in Windows Defender (Flag 5 technique)
-// Looks for registry value sets under the ExcludeFileExtensions key
-DeviceRegistryEvents
-| where DeviceName == "azuki-sl"
-| where Timestamp >= datetime(2025-11-19T18:36:00Z) 
-    and Timestamp <  datetime(2025-11-20T00:00:00Z)
-| where RegistryKey endswith @"\Microsoft\Windows Defender\Exclusions\Extensions"
-    or RegistryKey == @"HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows Defender\Exclusions\Extensions"
-| where ActionType == "RegistryValueSet"
-| where isnotempty(RegistryValueName) or RegistryValueName == "ExcludeFileExtensions"
-// Optional: filter only the actual exclusion value
-// | where RegistryValueName == "ExcludeFileExtensions"
-| project Timestamp, 
-          DeviceName,
-          InitiatingProcessAccountName,
-          InitiatingProcessCommandLine,
-          RegistryKey,
-          RegistryValueName,
-          RegistryValueData
-| order by Timestamp desc
-//Flag 5 Answer = 3
+On **19 November 2025**, an external attacker initiated a targeted compromise of the Azuki Bean Company network by gaining interactive access to the workstation **azuki-sl** (a standard user endpoint assigned to employee **kenji.sato**). The initial logon originated from the external IP address **88.97.178.12** (geolocating to the United Kingdom, consistent with residential or compromised proxy usage) at approximately 6:36 PM. This access was likely achieved through exploitation of exposed RDP, credential stuffing, phishing-derived credentials, or a compromised VPN session—though the precise vector remains to be confirmed via deeper log analysis.
 
-//Flag 6: DEFENCE EVASION - Temporary Folder Exclusion
-DeviceRegistryEvents
-| where DeviceName == "azuki-sl"
-| where Timestamp >= datetime(2025-11-19) and Timestamp < datetime(2025-11-21)
-| where RegistryKey endswith @"\Exclusions\Paths"
-    and ActionType == "RegistryValueSet"
-    and RegistryValueData == "0"
-    and RegistryValueName contains @"Temp"          // quick filter for temporary folders
-| project Timestamp, RegistryValueName, InitiatingProcessCommandLine
-| order by Timestamp desc
-// Flag 6 Answer = 
-//C:\Users\KENJI~1.SAT\AppData\Local\Temp
+Once inside, the attacker rapidly escalated their foothold using living-off-the-land techniques. They executed a malicious PowerShell payload (**wupdate.ps1**) downloaded from a command-and-control (C2) server at **78.141.196.6:8080**, disabled critical Microsoft Defender antivirus protections by adding exclusions for executable, script, and batch files, and conducted basic host reconnaissance (whoami, hostname, systeminfo).
 
-// Flag 7: DEFENCE EVASION - Download Utility Abuse
-DeviceProcessEvents
-| where DeviceName == "azuki-sl"  
-| where Timestamp >= datetime(2025-11-19 18:36:00) 
-and Timestamp < datetime(2025-11-20 00:00:00)
-| where ProcessCommandLine matches regex @"(?i)https?://.*(exe|dll|ps1|bat|C:\\|ProgramData|AppData|Temp)"
-| project Timestamp, FileName, ProcessCommandLine
-| order by Timestamp desc
-// Flag 7 Answer is certutil.exe
+The attacker then downloaded and executed additional tools from the same C2 infrastructure:
+- A renamed Mimikatz binary (**mm.exe**) to dump credentials from memory (sekurlsa::logonpasswords).
+- A persistent backdoor payload (**svchost.exe**) deployed via a scheduled task named **"Windows Update Check"** running daily as SYSTEM.
 
-//Flag 8: PERSISTENCE - Scheduled Task Name
-//Flag 9:Flag 9: PERSISTENCE - Scheduled Task Target
-DeviceProcessEvents
-| where DeviceName == "azuki-sl"  
-| where Timestamp >= datetime(2025-11-19 18:36:00) 
-and Timestamp < datetime(2025-11-20 00:00:00)
-| where FileName contains "schtasks.exe"
-| project Timestamp, FileName, ProcessCommandLine
-| order by Timestamp desc
-// Flag 8 Answer = Windows Update Check
-// Flag 9 Answer = C:\ProgramData\WindowsCache\svchost.exe
+Collected credentials and system data were archived and exfiltrated to a private Discord webhook using curl. For anti-forensics, the attacker cleared key Windows event logs (Security, System, Application). They also created a local administrative backdoor account named **support** and used stolen credentials (stored via cmdkey) to initiate RDP lateral movement to the critical file server **azuki-fileserver01** (10.1.0.188).
 
-// Flag 10  COMMAND & CONTROL - C2 Server Address
-//Flag 11 COMMAND & CONTROL - C2 Communication Port
-DeviceNetworkEvents
-| where DeviceName == "azuki-sl"  
-| where Timestamp >= datetime(2025-11-19 18:36:00) 
-and Timestamp < datetime(2025-11-20 00:00:00)
-| project Timestamp,ActionType, RemoteIP, RemotePort, InitiatingProcessFileName, InitiatingProcessCommandLine
-// Flag 10 Answer = 78.141.196.6
-// Flag 11 Answer = 443
+This workstation breach on 19 November served as the **entry point and pivot** for the subsequent, more destructive activity observed on the file server starting 22 November, where the same C2 IP (78.141.196.6) was used for payload delivery, data exfiltration, LSASS dumping, and persistence. The compromise of **kenji.sato**’s credentials—combined with successful Mimikatz execution—almost certainly provided the **fileadmin** domain/file-server credentials that enabled the later escalation and large-scale data theft.
 
-// Flag 12 CREDENTIAL ACCESS - Credential Theft Tool
-mm.exe
+The overall campaign demonstrates a sophisticated, multi-stage intrusion involving initial access, defense evasion, credential access, persistence, exfiltration, and lateral movement, with strong indicators of preparation for ransomware deployment or long-term espionage.
 
+# Recommended Next Actions (Ordered by Urgency/Severity)
 
-//Flag 13 CREDENTIAL ACCESS - Memory Extraction Module
-DeviceProcessEvents
-| where DeviceName == "azuki-sl"
-| where Timestamp > datetime(2025-11-19 18:00:00)
-| where ProcessCommandLine contains "sekurlsa"
-   or ProcessCommandLine contains "logonpasswords"
-| project Timestamp, FileName, ProcessCommandLine
-//Flag 13 Answer = sekurlsa::logonpasswords exit
+### Immediate (Critical - Contain Now)
+- Isolate **azuki-sl** from the network to prevent further lateral movement or C2 communication.
+- Block outbound/inbound traffic to/from **78.141.196.6** (all ports, especially 8080) and **88.97.178.12** at the firewall/perimeter.
+- Force password reset and session revocation for **kenji.sato**, **fileadmin**, **support** (delete this account), and all privileged accounts; enforce MFA immediately.
+- Disable/delete the malicious scheduled task **"Windows Update Check"** and remove files in **C:\ProgramData\WindowsCache\** (svchost.exe, mm.exe, export-data.zip) and Temp (wupdate.*).
 
-// Flag 14 COLLECTION - Data Staging Archive
-// Flag 14 COLLECTION - Data Staging Archive
-DeviceFileEvents
-| where Timestamp > datetime(2025-11-19 18:00:00)
-| where DeviceName == "azuki-sl"
-| where FolderPath startswith "C:"
-| where FileName endswith ".zip"
-//Flag 14 Answer export-data.zip
+### High Priority (Within Hours - Eradicate & Investigate)
+- Perform full forensic imaging and analysis of **azuki-sl**; search for Mimikatz dumps, exported data, and LSASS memory artifacts.
+- Assume all credentials used by **kenji.sato** and dumped via Mimikatz are compromised; initiate enterprise-wide privileged account password rotation.
+- Scan the environment for the backdoor account **support** on all systems and remove it.
+- Review all RDP/VPN logs for connections from **88.97.178.12** and identify the initial access vector (e.g., exposed RDP, weak credentials, VPN compromise).
 
-//Flag 15: EXFILTRATION - Exfiltration Channel
-DeviceNetworkEvents
-| where Timestamp > datetime(2025-11-19 18:00:00)
-| where DeviceName == "azuki-sl"
-| where RemotePort == "443"
-| where InitiatingProcessCommandLine contains ".zip"
-// Flag 15 Answer = disord
+### Medium Priority (Within 1-2 Days - Recover & Report)
+- Notify affected users (especially kenji.sato) and assess data exfiltrated to Discord webhook for breach notification requirements.
+- Re-enable and update Microsoft Defender; remove all added exclusions and run full scans across the environment.
+- Engage external incident response team if not already involved.
 
-//Flag 16 ANTI-FORENSICS - Log Tampering
-DeviceProcessEvents
-| where Timestamp > datetime(2025-11-19 18:00:00)
-| where DeviceName == "azuki-sl"
-| where AccountName == "kenji.sato"
-| where FileName contains "wevtutil.exe"
-| project Timestamp, FolderPath, ProcessCommandLine
-//Flag 16 Answer = Security
-
-// Flag 17  IMPACT - Persistence Account
-DeviceProcessEvents
-| where Timestamp >= datetime(2025-11-19 18:36:00) 
-and Timestamp < datetime(2025-11-20 00:00:00)
-| where DeviceName == "azuki-sl"  
-| where AccountName == "kenji.sato"
-| where ProcessCommandLine contains "/add"
-| project Timestamp, AccountName, ActionType, ProcessCommandLine
-//Flag 17 Answer = support
-
-// Flag 18 EXECUTION - Malicious Script
-DeviceFileEvents
-| where Timestamp >= datetime(2025-11-19 18:36:00) 
-and Timestamp < datetime(2025-11-20 00:00:00)
-| where DeviceName == "azuki-sl"  
-| where FileName endswith ".ps1"
-| project Timestamp,FileName,ActionType,InitiatingProcessCommandLine
-// Flag 18 Answer = wupdate.ps1
-
-//Flag 19: LATERAL MOVEMENT - Secondary Target
-DeviceProcessEvents
-| where Timestamp >= datetime(2025-11-19 18:36:00) 
-and Timestamp < datetime(2025-11-20 00:00:00)
-| where DeviceName == "azuki-sl"  
-| where ProcessCommandLine matches regex @"\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b"
-| project Timestamp, DeviceName, ProcessCommandLine
-| order by Timestamp desc
-//Flag 19 Answer = 10.1.0.188
-
-//Flag 20: LATERAL MOVEMENT - Remote Access Tool
-DeviceProcessEvents
-| where Timestamp >= datetime(2025-11-19 19:00:00) 
-and Timestamp < datetime(2025-11-20 00:00:00)
-| where DeviceName == "azuki-sl"  
-| where AccountName == "kenji.sato"
-| project Timestamp, ProcessCommandLine
-//Flag 20 Answer = mstsc.exe
+### Ongoing (Longer-Term - Harden)
+- Restrict RDP/VPN exposure; enforce network segmentation to limit workstation-to-server access.
+- Implement stricter PowerShell logging, script block logging, and AMSI enforcement.
+- Conduct threat hunting for additional indicators (e.g., certutil/cURL abuse, Discord webhook exfiltration, C2 beaconing to 78.141.196.6).
+- Perform a full credential and access review; reduce unnecessary privileged account usage.
