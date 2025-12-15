@@ -1,4 +1,11 @@
-# Executive Summary
+<img width="565" height="118" alt="image" src="https://github.com/user-attachments/assets/97a7be03-23bc-40f0-8805-efba1d8e9324" />
+
+# CTF Port of Entry
+
+
+
+
+## Executive Summary
 
 On **19 November 2025**, an external attacker initiated a targeted compromise of the Azuki Bean Company network by gaining interactive access to the workstation **azuki-sl** (a standard user endpoint assigned to employee **kenji.sato**). The initial logon originated from the external IP address **88.97.178.12** (geolocating to the United Kingdom, consistent with residential or compromised proxy usage) at approximately 6:36 PM. This access was likely achieved through exploitation of exposed RDP, credential stuffing, phishing-derived credentials, or a compromised VPN session—though the precise vector remains to be confirmed via deeper log analysis.
 
